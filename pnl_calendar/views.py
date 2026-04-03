@@ -36,9 +36,10 @@ def _parse_month(month_raw: str | None) -> date:
 
 
 def _scope_from_request(request):
+    stage = request.GET.get("evaluation_funded") or request.GET.get("stage")
     return {
         "account_id": request.GET.get("account"),
-        "stage": request.GET.get("stage"),
+        "stage": stage,
     }
 
 
@@ -286,23 +287,23 @@ def settings_view(request):
 
         if not had_errors:
             messages.success(request, "Settings updated." if updated_anything else "No settings changes detected.")
-        return redirect("pnl_calendar:settings")
+        return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
 
     account_form = AccountForm(prefix="account")
     payout_form = PayoutForm(account_qs=account_queryset, prefix="payout")
     group_form = CopyTradingGroupForm(prefix="copy_group")
     assignment_formset = CopyTradingAssignmentFormSet(queryset=account_queryset, prefix="copy_assign")
 
-    return render(
-        request,
-        "pnl_calendar/settings.html",
-        {
-            "account_form": account_form,
-            "payout_form": payout_form,
-            "group_form": group_form,
-            "assignment_formset": assignment_formset,
-            "copy_groups": CopyTradingGroup.objects.order_by("name"),
-            "accounts": account_queryset,
-            "payouts": Payout.objects.select_related("account", "account__firm").order_by("-payout_date", "-id"),
-        },
-    )
+    context = {
+        "account_form": account_form,
+        "payout_form": payout_form,
+        "group_form": group_form,
+        "assignment_formset": assignment_formset,
+        "copy_groups": CopyTradingGroup.objects.order_by("name"),
+        "accounts": account_queryset,
+        "payouts": Payout.objects.select_related("account", "account__firm").order_by("-payout_date", "-id"),
+    }
+
+    if request.headers.get("HX-Request"):
+        return render(request, "pnl_calendar/_settings_modal_content.html", context)
+    return render(request, "pnl_calendar/settings.html", context)

@@ -10,6 +10,14 @@ class TradeFilterForm(forms.Form):
     date_to = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     account = forms.ModelChoiceField(required=False, queryset=PropAccount.objects.none())
     stage = forms.ChoiceField(required=False, choices=[("", "All")] + list(PropAccount._meta.get_field("stage").choices))
+    evaluation_funded = forms.ChoiceField(
+        required=False,
+        choices=[
+            ("", "All"),
+            ("evaluation", "Evaluations"),
+            ("funded", "Fundeds"),
+        ],
+    )
 
     def __init__(self, *args, account_qs=None, **kwargs):
         super().__init__(*args, **kwargs)

@@ -1,0 +1,128 @@
+<section class="sheet compact-settings-header">
+  <div class="settings-modal-top">
+    <div>
+      <h1>Settings</h1>
+      <p class="subtle">Configure accounts, copy trading groups, and visual preferences.</p>
+    </div>
+    <button type="button" class="icon-btn close-settings" aria-label="Close settings">×</button>
+  </div>
+</section>
+
+<section class="sheet compact-settings">
+  <div class="appearance-row">
+    <div>
+      <h2>Appearance</h2>
+      <p class="subtle">Dark mode is default. You can switch to light mode anytime.</p>
+    </div>
+    <div class="theme-controls">
+      <label for="theme-toggle">Light mode</label>
+      <input id="theme-toggle" type="checkbox" aria-label="Enable light mode">
+    </div>
+  </div>
+</section>
+
+<section class="sheet compact-settings">
+  <h2>Accounts & Payouts</h2>
+  <form method="post" class="settings-form">
+    {% csrf_token %}
+    <h3>Add Account</h3>
+    {{ account_form.as_p }}
+
+    <h3>Record Payout</h3>
+    {{ payout_form.as_p }}
+    <button type="submit" class="primary-btn">Save Settings</button>
+  </form>
+</section>
+
+<section class="sheet compact-settings">
+  <h2>Create Copy Trading Groups</h2>
+  <form method="post" class="settings-form">
+    {% csrf_token %}
+    {{ group_form.as_p }}
+    <button type="submit" class="primary-btn">Create Group</button>
+  </form>
+  {% if copy_groups %}
+  <p><small>Existing groups: {% for group in copy_groups %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>
+  {% endif %}
+</section>
+
+<section class="sheet compact-settings">
+  <h2>Copy Trading Accounts</h2>
+  <form method="post" class="settings-form">
+    {% csrf_token %}
+    {{ assignment_formset.management_form }}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Firm</th><th>Account</th><th>Stage</th><th>Trading Group</th><th>Lead</th></tr></thead>
+        <tbody>
+          {% for form in assignment_formset %}
+          <tr>
+            <td>{{ form.instance.firm.name }}</td>
+            <td>{{ form.instance.nickname }}</td>
+            <td>{{ form.instance.get_stage_display }}</td>
+            <td>
+              {{ form.id }}
+              {{ form.copy_group }}
+            </td>
+            <td>
+              <label class="lead-star-label">
+                {{ form.is_copy_lead }}
+                <span class="star-icon star-off">☆</span>
+                <span class="star-icon star-on">★</span>
+              </label>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="primary-btn">Save Copy Trading Setup</button>
+  </form>
+</section>
+
+<section class="sheet compact-settings">
+  <h2>Existing Accounts</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Firm</th><th>Nickname</th><th>Stage</th><th>Broker</th><th>Account Size</th><th>Activation Fee</th><th>Target Hit Date</th><th>Group</th><th>Lead</th><th>Active</th></tr></thead>
+      <tbody>
+        {% for account in accounts %}
+        <tr>
+          <td>{{ account.firm.name }}</td>
+          <td>{{ account.nickname }}</td>
+          <td>{{ account.get_stage_display }}</td>
+          <td>{{ account.get_broker_display }}</td>
+          <td>${{ account.account_size|floatformat:2 }}</td>
+          <td>${{ account.activation_fee|floatformat:2 }}</td>
+          <td>{{ account.profit_target_hit_date|default:"-" }}</td>
+          <td>{{ account.copy_group.name|default:"-" }}</td>
+          <td>{% if account.is_copy_lead %}★{% else %}-{% endif %}</td>
+          <td>{{ account.is_active }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="sheet compact-settings">
+  <h2>Payout History</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Firm</th><th>Account</th><th>Amount</th><th>Notes</th></tr></thead>
+      <tbody>
+        {% for payout in payouts %}
+        <tr>
+          <td>{{ payout.payout_date }}</td>
+          <td>{{ payout.account.firm.name }}</td>
+          <td>{{ payout.account.nickname }}</td>
+          <td>${{ payout.amount|floatformat:2 }}</td>
+          <td>{{ payout.notes|default:"-" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">No payouts recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
