@@ -1,0 +1,27 @@
+{% extends "pnl_calendar/base.html" %}
+{% block content %}
+<section>
+  <h2>Trading PnL Month View</h2>
+  <form id="filters" class="grid filter-grid" hx-get="{{ request.path }}" hx-target="#calendar-block" hx-swap="outerHTML" hx-trigger="change from:input, submit">
+    {{ filter_form.month.label_tag }} {{ filter_form.month }}
+    {{ filter_form.date_from.label_tag }} {{ filter_form.date_from }}
+    {{ filter_form.date_to.label_tag }} {{ filter_form.date_to }}
+    {{ filter_form.account.label_tag }} {{ filter_form.account }}
+    {{ filter_form.stage.label_tag }} {{ filter_form.stage }}
+    <button type="submit">Apply</button>
+  </form>
+</section>
+
+<section id="calendar-block">
+  {% include "pnl_calendar/_calendar_block.html" %}
+</section>
+
+<section>
+  <h3>Add Trade</h3>
+  <form method="post" action="{% url 'pnl_calendar:add_trade' %}" class="grid trade-form">
+    {% csrf_token %}
+    {{ trade_form.as_p }}
+    <button type="submit">Save Trade</button>
+  </form>
+</section>
+{% endblock %}

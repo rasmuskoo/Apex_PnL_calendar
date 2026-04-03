@@ -1,0 +1,63 @@
+{% load pnl_extras %}
+<div id="calendar-block">
+  <section class="month-nav">
+    <a href="?{{ prev_query }}" hx-get="?{{ prev_query }}" hx-target="#calendar-block" hx-swap="outerHTML">Previous</a>
+    <h3>{{ month_start|date:"F Y" }}</h3>
+    <a href="?{{ next_query }}" hx-get="?{{ next_query }}" hx-target="#calendar-block" hx-swap="outerHTML">Next</a>
+  </section>
+
+  <section class="calendar-grid-wrapper">
+    <div class="calendar-weekdays">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    </div>
+    <div class="calendar-grid">
+      {% for week in month_grid %}
+        {% for day in week %}
+          {% with row=day_map|get_item:day %}
+          <article class="day-cell {% if day.month != month_start.month %}out-month{% endif %} {% if row and row.net > 0 %}profit{% elif row and row.net < 0 %}loss{% endif %}">
+            <header>{{ day.day }}</header>
+            {% if row %}
+            <small>Net: {{ row.net|floatformat:2 }}</small>
+            <small>Trades: {{ row.trades_count }}</small>
+            {% endif %}
+          </article>
+          {% endwith %}
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="summary-grid">
+    <article><h4>Net PnL</h4><p>${{ summary.net_pnl|floatformat:2 }}</p></article>
+    <article><h4>Net % vs Accounts</h4><p>{{ summary.account_return_pct|floatformat:2 }}% ({{ summary.accounts_used }} accounts)</p></article>
+    <article><h4>Trade Win %</h4><p>{{ summary.trade_win_pct|floatformat:2 }}%</p></article>
+    <article><h4>Current Day Streak</h4><p>Win {{ summary.streaks.day.current_win }} / Loss {{ summary.streaks.day.current_loss }}</p></article>
+    <article><h4>Best Day Streak</h4><p>Win {{ summary.streaks.day.best_win }} / Loss {{ summary.streaks.day.best_loss }}</p></article>
+    <article><h4>Current Trade Streak</h4><p>Win {{ summary.streaks.trade.current_win }} / Loss {{ summary.streaks.trade.current_loss }}</p></article>
+    <article><h4>Best Trade Streak</h4><p>Win {{ summary.streaks.trade.best_win }} / Loss {{ summary.streaks.trade.best_loss }}</p></article>
+    <article><h4>Avg Win/Loss Trade</h4><p>${{ summary.avg_win_trade|floatformat:2 }} / ${{ summary.avg_loss_trade|floatformat:2 }}</p></article>
+    <article><h4>Avg Win/Loss Day</h4><p>${{ summary.avg_win_day|floatformat:2 }} / ${{ summary.avg_loss_day|floatformat:2 }}</p></article>
+  </section>
+
+  {% if apex_reports %}
+  <section class="rules-section">
+    <h3>Apex Rule Monitor</h3>
+    {% for report in apex_reports %}
+    <article class="rules-card">
+      <header>
+        <strong>{{ report.account.nickname }}</strong>
+        <small>{{ report.account.get_stage_display }} | {{ report.account.account_size|floatformat:0 }}</small>
+        <small>Breaches: {{ report.breach_count }} | Warnings: {{ report.warn_count }}</small>
+      </header>
+      <ul class="rule-list">
+        {% for check in report.checks %}
+        <li class="rule-{{ check.level }}">
+          <strong>{{ check.name }}:</strong> {{ check.detail }}
+        </li>
+        {% endfor %}
+      </ul>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
