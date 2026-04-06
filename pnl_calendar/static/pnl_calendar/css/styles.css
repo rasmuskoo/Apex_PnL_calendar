@@ -85,7 +85,7 @@ body {
   top: 0;
   z-index: 20;
   padding: var(--space-3) 0.6rem;
-  backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: none;
   background: linear-gradient(180deg, rgba(10, 107, 230, 0.88), rgba(8, 89, 196, 0.78));
   border-bottom: 1px solid var(--border);
   transition: box-shadow var(--speed-mid) var(--curve-ios);
@@ -221,7 +221,7 @@ body.scrolled .app-chrome {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: clamp(1rem, 2vw, 1.6rem);
-  backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: none;
 }
 
 .hero-sheet {
@@ -429,6 +429,10 @@ button[type="submit"]:active {
   gap: var(--space-4);
 }
 
+.calendar-shell .sheet {
+  backdrop-filter: none;
+}
+
 .calendar-grid-wrapper {
   padding-top: var(--space-3);
 }
@@ -443,7 +447,7 @@ button[type="submit"]:active {
 .calendar-weekdays span {
   text-align: center;
   font-weight: 600;
-  color: color-mix(in srgb, var(--text) 74%, var(--muted));
+  color: var(--muted);
 }
 
 .day-cell {
@@ -453,6 +457,7 @@ button[type="submit"]:active {
   background: var(--surface-soft);
   padding: 0.55rem;
   transition: transform var(--speed-fast) var(--curve-ios);
+  cursor: pointer;
 }
 
 .day-cell > header {
@@ -466,6 +471,15 @@ button[type="submit"]:active {
 .day-cell:hover {
   transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.calendar-grid .day-cell {
+  transition: none;
+}
+
+.calendar-grid .day-cell:hover {
+  transform: none;
+  border-color: var(--border);
 }
 
 .day-cell:active {
@@ -499,6 +513,79 @@ button[type="submit"]:active {
 
 .day-cell.out-month {
   opacity: 0.46;
+}
+
+.day-cell.status-no-trade {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+
+.day-cell.status-market-closed {
+  border-color: color-mix(in srgb, var(--muted) 55%, var(--border));
+}
+
+.day-popup {
+  width: auto;
+  max-width: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.day-popup::backdrop {
+  background: rgba(0, 6, 16, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.day-popup-card {
+  width: min(760px, 96vw);
+  min-height: 420px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.day-popup-body {
+  margin-top: 0.45rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.popup-trade-form {
+  display: none;
+  margin-top: 0.45rem;
+}
+
+.popup-trade-form.show {
+  display: block;
+}
+
+.day-popup-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+
+.day-popup-actions form {
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.day-popup-actions .primary-btn,
+.day-popup-actions .chip-link {
+  min-height: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.6rem;
+  padding: 0.12rem 0.4rem;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .summary-grid {
@@ -602,7 +689,7 @@ dialog#settings-modal[open] {
 
 .settings-modal::backdrop {
   background: rgba(0, 5, 16, 0.6);
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
 }
 
 .settings-modal-content {
@@ -1120,11 +1207,11 @@ td {
 }
 
 .entrance-fade {
-  animation: fade-up var(--speed-mid) var(--curve-ios) both;
+  animation: none;
 }
 
 .summary-grid .metric-cell {
-  animation: fade-up var(--speed-mid) var(--curve-ios) both;
+  animation: none;
 }
 
 .summary-grid .metric-cell:nth-child(2) { animation-delay: 30ms; }
@@ -1151,11 +1238,11 @@ td {
 }
 
 .calendar-shell.swap-in-next {
-  animation: calendar-in-next 300ms var(--curve-ios) both;
+  animation: none;
 }
 
 .calendar-shell.swap-in-prev {
-  animation: calendar-in-prev 300ms var(--curve-ios) both;
+  animation: none;
 }
 
 @keyframes fade-up {

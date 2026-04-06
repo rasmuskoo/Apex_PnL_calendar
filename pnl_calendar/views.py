@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.db.models import Count, F, Sum
 from django.db.models.functions import Coalesce
+from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
@@ -17,7 +18,7 @@ from .forms import (
     TradeFilterForm,
     TradeForm,
 )
-from .models import CopyTradingGroup, InactiveReason, Payout, PropAccount, PropFirm, Stage, Trade
+from .models import CopyTradingGroup, DayStatus, InactiveReason, Payout, PropAccount, PropFirm, Stage, Trade, TradingDayStatus
 from .rules import (
     APEX_DRAWDOWN_LIMIT,
     APEX_MAX_PAYOUTS,
@@ -348,8 +349,15 @@ def dashboard(request):
         .order_by("trade_date")
     )
     day_map = {row["trade_date"]: row for row in daily}
-
     month_grid = build_month_grid(month_start.year, month_start.month)
+    day_status_map = {
+        row.trade_date: row.status
+        for row in TradingDayStatus.objects.filter(
+            firm__code=APEX_FIRM_CODE,
+            trade_date__gte=month_grid[0][0] if month_grid else month_start,
+            trade_date__lte=month_grid[-1][-1] if month_grid else month_end,
+        )
+    }
     scoped_accounts_qs = _rule_scope_accounts(request)
     scoped_accounts = list(scoped_accounts_qs)
     summary = _build_summary_data(trades, accounts_qs=scoped_accounts_qs)
@@ -377,6 +385,7 @@ def dashboard(request):
         "month_start": month_start,
         "month_grid": month_grid,
         "day_map": day_map,
+        "day_status_map": day_status_map,
         "summary": summary,
         "warning_items": warning_items,
         "prev_query": prev_params.urlencode(),
@@ -400,6 +409,10 @@ def add_trade(request):
     form = TradeForm(request.POST, account_qs=apex_accounts)
     if form.is_valid():
         trade = form.save()
+        TradingDayStatus.objects.filter(
+            firm__code=APEX_FIRM_CODE,
+            trade_date=trade.trade_date,
+        ).delete()
         copied_count = 0
         lead_account = trade.account
         if lead_account.copy_group_id and lead_account.is_copy_lead and trade.source_trade_id is None:
@@ -427,6 +440,36 @@ def add_trade(request):
             messages.success(request, "Trade saved.")
     else:
         messages.error(request, f"Could not save trade: {form.errors.as_text()}")
+    return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
+
+
+def set_day_status(request):
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    trade_date_raw = request.POST.get("trade_date")
+    status = request.POST.get("status")
+    if status not in {DayStatus.NO_TRADE, DayStatus.MARKET_CLOSED}:
+        messages.error(request, "Invalid day status.")
+        return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
+
+    try:
+        parsed_date = date.fromisoformat(trade_date_raw or "")
+    except ValueError:
+        messages.error(request, "Invalid date.")
+        return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
+
+    firm = PropFirm.objects.filter(code=APEX_FIRM_CODE).first()
+    if not firm:
+        messages.error(request, "Apex firm is not configured.")
+        return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
+
+    TradingDayStatus.objects.update_or_create(
+        firm=firm,
+        trade_date=parsed_date,
+        defaults={"status": status},
+    )
+    messages.success(request, f"{parsed_date} marked as {DayStatus(status).label.lower()}.")
     return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
 
 

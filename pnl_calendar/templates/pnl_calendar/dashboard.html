@@ -20,12 +20,31 @@
   {% include "pnl_calendar/_calendar_block.html" %}
 </section>
 
-<section class="sheet entrance-fade compact-trade">
-  <h2>Add Trade</h2>
-  <form method="post" action="{% url 'pnl_calendar:add_trade' %}" class="trade-form">
-    {% csrf_token %}
-    {{ trade_form.as_p }}
-    <button type="submit" class="primary-btn">Save Trade</button>
-  </form>
-</section>
+<dialog id="day-popup" class="day-popup">
+  <article class="day-popup-card day-cell">
+    <header id="day-popup-date">--</header>
+    <div class="day-popup-body">
+      <form id="day-trade-form" method="post" action="{% url 'pnl_calendar:add_trade' %}" class="trade-form popup-trade-form">
+        {% csrf_token %}
+        {{ trade_form.as_p }}
+        <button type="submit" class="primary-btn">Save Trade</button>
+      </form>
+    </div>
+    <footer class="day-popup-actions">
+      <button type="button" id="day-popup-add-trade" class="primary-btn">Add trade</button>
+      <form method="post" action="{% url 'pnl_calendar:set_day_status' %}">
+        {% csrf_token %}
+        <input type="hidden" name="trade_date" class="popup-day-target">
+        <input type="hidden" name="status" value="no_trade">
+        <button type="submit" class="chip-link">No trade</button>
+      </form>
+      <form method="post" action="{% url 'pnl_calendar:set_day_status' %}">
+        {% csrf_token %}
+        <input type="hidden" name="trade_date" class="popup-day-target">
+        <input type="hidden" name="status" value="market_closed">
+        <button type="submit" class="chip-link">Market closed</button>
+      </form>
+    </footer>
+  </article>
+</dialog>
 {% endblock %}

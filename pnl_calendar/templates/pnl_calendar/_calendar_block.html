@@ -34,15 +34,23 @@
       {% for week in month_grid %}
         {% for day in week %}
           {% with row=day_map|get_item:day %}
-          <article class="day-cell {% if day.month != month_start.month %}out-month{% endif %} {% if row and row.net > 0 %}profit{% elif row and row.net < 0 %}loss{% endif %}">
+          {% with day_status=day_status_map|get_item:day %}
+          <article
+            class="day-cell {% if day.month != month_start.month %}out-month{% endif %} {% if row and row.net > 0 %}profit{% elif row and row.net < 0 %}loss{% endif %} {% if day_status == 'no_trade' %}status-no-trade{% elif day_status == 'market_closed' %}status-market-closed{% endif %}"
+            data-day-cell
+            data-day="{{ day|date:'Y-m-d' }}"
+          >
             <header>{{ day.day }}</header>
             {% if row %}
             <small>Net <strong>${{ row.net|floatformat:2 }}</strong></small>
             <small>{{ row.trades_count }} trades</small>
-            {% else %}
-            <small>No trades</small>
+            {% elif day_status == 'no_trade' %}
+            <small>No trade</small>
+            {% elif day_status == 'market_closed' %}
+            <small>Market closed</small>
             {% endif %}
           </article>
+          {% endwith %}
           {% endwith %}
         {% endfor %}
       {% endfor %}

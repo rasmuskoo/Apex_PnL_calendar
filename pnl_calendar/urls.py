@@ -9,5 +9,6 @@ urlpatterns = [
     path("accounts/", views.accounts_view, name="accounts"),
     path("rule-monitor/", views.rule_monitor_view, name="rule_monitor"),
     path("trade/add/", views.add_trade, name="add_trade"),
+    path("day-status/set/", views.set_day_status, name="set_day_status"),
     path("settings/", views.settings_view, name="settings"),
 ]

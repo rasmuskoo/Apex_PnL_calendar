@@ -34,6 +34,11 @@ class InactiveReason(models.TextChoices):
     FUNDING_BLOWN = "funding_blown", "Funding blown"
 
 
+class DayStatus(models.TextChoices):
+    NO_TRADE = "no_trade", "No trade"
+    MARKET_CLOSED = "market_closed", "Market closed"
+
+
 class PropFirm(models.Model):
     name = models.CharField(max_length=120, unique=True)
     code = models.SlugField(max_length=40, unique=True)
@@ -171,3 +176,16 @@ class Payout(models.Model):
 
     def __str__(self) -> str:
         return f"{self.account} payout {self.amount} on {self.payout_date}"
+
+
+class TradingDayStatus(models.Model):
+    firm = models.ForeignKey(PropFirm, on_delete=models.CASCADE, related_name="day_statuses")
+    trade_date = models.DateField()
+    status = models.CharField(max_length=20, choices=DayStatus.choices)
+
+    class Meta:
+        unique_together = ("firm", "trade_date")
+        ordering = ("-trade_date",)
+
+    def __str__(self) -> str:
+        return f"{self.firm.code} {self.trade_date} {self.status}"

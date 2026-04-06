@@ -36,26 +36,9 @@ function primeMonthInput() {
   }
 }
 
-function replayEntranceAnimations(root) {
-  const animated = root.querySelectorAll(".entrance-fade, .metric-cell");
-  animated.forEach((node) => {
-    node.classList.remove("entrance-fade");
-    void node.offsetWidth;
-    node.classList.add("entrance-fade");
-  });
-}
-
 function stageSheets(root = document) {
-  const nodes = root.querySelectorAll(".sheet, .metric-cell");
-  nodes.forEach((node, index) => {
-    node.classList.remove("staged-in");
-    node.classList.add("staged");
-    node.style.setProperty("--stagger-index", String(index));
-  });
-
-  requestAnimationFrame(() => {
-    nodes.forEach((node) => node.classList.add("staged-in"));
-  });
+  // Performance mode: disable staged entrance work.
+  void root;
 }
 
 function bindCalendarDirection() {
@@ -73,12 +56,7 @@ function bindCalendarDirection() {
 }
 
 function bindScrollChrome() {
-  const setScrolled = () => {
-    document.body.classList.toggle("scrolled", window.scrollY > 8);
-  };
-
-  setScrolled();
-  window.addEventListener("scroll", setScrolled, { passive: true });
+  // Disabled for responsiveness.
 }
 
 function formatDate(value) {
@@ -217,6 +195,61 @@ function bindCloseSettings() {
   closeBtn.dataset.bound = "true";
 }
 
+function bindDayPopup() {
+  const popup = document.querySelector("#day-popup");
+  const dateLabel = document.querySelector("#day-popup-date");
+  const addTradeBtn = document.querySelector("#day-popup-add-trade");
+  const tradeForm = document.querySelector("#day-trade-form");
+  const tradeDateInput = document.querySelector("#id_trade_date");
+  const statusTargets = document.querySelectorAll(".popup-day-target");
+  if (!popup || !dateLabel || !addTradeBtn || !tradeForm || !tradeDateInput) {
+    return;
+  }
+
+  if (popup.dataset.bound !== "true") {
+    popup.addEventListener("click", (event) => {
+      if (event.target === popup) {
+        popup.close();
+      }
+    });
+    addTradeBtn.addEventListener("click", () => {
+      tradeForm.classList.toggle("show");
+    });
+
+    const openPopup = () => {
+      if (typeof popup.showModal === "function") {
+        if (!popup.open) {
+          popup.showModal();
+        }
+      } else {
+        popup.setAttribute("open", "open");
+      }
+    };
+
+    document.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const cell = event.target.closest("[data-day-cell]");
+      if (!cell) {
+        return;
+      }
+      const day = cell.dataset.day;
+      if (!day) {
+        return;
+      }
+      dateLabel.textContent = day;
+      tradeDateInput.value = day;
+      statusTargets.forEach((input) => {
+        input.value = day;
+      });
+      tradeForm.classList.remove("show");
+      openPopup();
+    });
+    popup.dataset.bound = "true";
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const stored = localStorage.getItem(THEME_KEY);
   applyTheme(stored === "light" ? "light" : "dark");
@@ -225,19 +258,13 @@ document.addEventListener("DOMContentLoaded", () => {
   bindScrollChrome();
   bindHotRangeFilters();
   bindSettingsModal();
+  bindDayPopup();
   primeMonthInput();
-  stageSheets(document);
 });
 
 document.addEventListener("htmx:afterSwap", (event) => {
   if (event.target.id === "calendar-block") {
     primeMonthInput();
-    replayEntranceAnimations(event.target);
-    stageSheets(event.target);
-    event.target.classList.remove("swap-in-next", "swap-in-prev");
-    event.target.classList.add(
-      pendingCalendarDirection === "prev" ? "swap-in-prev" : "swap-in-next"
-    );
   }
 
   if (event.target.id === "settings-modal-content") {
@@ -247,10 +274,10 @@ document.addEventListener("htmx:afterSwap", (event) => {
     }
     bindCloseSettings();
     bindThemeToggle();
-    stageSheets(event.target);
   }
 
   bindCalendarDirection();
   bindHotRangeFilters();
   bindThemeToggle();
+  bindDayPopup();
 });
