@@ -22,22 +22,35 @@
 </section>
 
 <section class="sheet compact-settings">
-  <h2>Accounts & Payouts</h2>
-  <form method="post" class="settings-form">
+  <h2>Record Payout</h2>
+  <form method="post" action="{% url 'pnl_calendar:settings' %}" class="settings-form">
     {% csrf_token %}
-    <h3>Add Account</h3>
-    {{ account_form.as_p }}
-
-    <h3>Record Payout</h3>
-    {{ payout_form.as_p }}
-    <button type="submit" class="primary-btn">Save Settings</button>
+    <input type="hidden" name="action" value="save_payout">
+    <p>
+      <label for="{{ payout_form.account.id_for_label }}">{{ payout_form.account.label }}</label>
+      {{ payout_form.account }}
+    </p>
+    <p>
+      <label for="{{ payout_form.payout_date.id_for_label }}">{{ payout_form.payout_date.label }}</label>
+      {{ payout_form.payout_date }}
+    </p>
+    <p>
+      <label for="{{ payout_form.amount.id_for_label }}">{{ payout_form.amount.label }}</label>
+      <span class="currency-input"><span class="currency-mark">$</span>{{ payout_form.amount }}</span>
+    </p>
+    <p>
+      <label for="{{ payout_form.notes.id_for_label }}">{{ payout_form.notes.label }}</label>
+      {{ payout_form.notes }}
+    </p>
+    <button type="submit" class="primary-btn">Save Payout</button>
   </form>
 </section>
 
 <section class="sheet compact-settings">
   <h2>Create Copy Trading Groups</h2>
-  <form method="post" class="settings-form">
+  <form method="post" action="{% url 'pnl_calendar:settings' %}" class="settings-form">
     {% csrf_token %}
+    <input type="hidden" name="action" value="save_group">
     {{ group_form.as_p }}
     <button type="submit" class="primary-btn">Create Group</button>
   </form>
@@ -48,8 +61,9 @@
 
 <section class="sheet compact-settings">
   <h2>Copy Trading Accounts</h2>
-  <form method="post" class="settings-form">
+  <form method="post" action="{% url 'pnl_calendar:settings' %}" class="settings-form">
     {% csrf_token %}
+    <input type="hidden" name="action" value="save_assignments">
     {{ assignment_formset.management_form }}
     <div class="table-wrap">
       <table>
@@ -82,27 +96,39 @@
 
 <section class="sheet compact-settings">
   <h2>Existing Accounts</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Firm</th><th>Nickname</th><th>Stage</th><th>Broker</th><th>Account Size</th><th>Activation Fee</th><th>Target Hit Date</th><th>Group</th><th>Lead</th><th>Active</th></tr></thead>
-      <tbody>
-        {% for account in accounts %}
-        <tr>
-          <td>{{ account.firm.name }}</td>
-          <td>{{ account.nickname }}</td>
-          <td>{{ account.get_stage_display }}</td>
-          <td>{{ account.get_broker_display }}</td>
-          <td>${{ account.account_size|floatformat:2 }}</td>
-          <td>${{ account.activation_fee|floatformat:2 }}</td>
-          <td>{{ account.profit_target_hit_date|default:"-" }}</td>
-          <td>{{ account.copy_group.name|default:"-" }}</td>
-          <td>{% if account.is_copy_lead %}★{% else %}-{% endif %}</td>
-          <td>{{ account.is_active }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <form method="post" action="{% url 'pnl_calendar:settings' %}" class="settings-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_account_lifecycle">
+    {{ lifecycle_formset.management_form }}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Firm</th><th>Account ID</th><th>Stage</th><th>Traildown</th><th>Broker</th><th>Account Size</th><th>Evaluation Fee</th><th>Activation Fee</th><th>Group</th><th>Lead</th><th>Active</th></tr></thead>
+        <tbody>
+          {% for form in lifecycle_formset %}
+          <tr>
+            <td>{{ form.instance.firm.name }}</td>
+            <td>{{ form.instance.external_id|default:form.instance.nickname }}</td>
+            <td>
+              {{ form.id }}
+              {{ form.stage }}
+            </td>
+            <td>{{ form.traildown_type }}</td>
+            <td>{{ form.instance.get_broker_display }}</td>
+            <td>${{ form.instance.account_size|floatformat:2 }}</td>
+            <td>${{ form.instance.evaluation_fee|floatformat:2 }}</td>
+            <td>
+              <span class="currency-input"><span class="currency-mark">$</span>{{ form.activation_fee }}</span>
+            </td>
+            <td>{{ form.instance.copy_group.name|default:"-" }}</td>
+            <td>{% if form.instance.is_copy_lead %}★{% else %}-{% endif %}</td>
+            <td>{{ form.is_active }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="primary-btn">Save Account Lifecycle</button>
+  </form>
 </section>
 
 <section class="sheet compact-settings">

@@ -1,0 +1,155 @@
+{% extends "pnl_calendar/base.html" %}
+{% block content %}
+<div class="accounts-page">
+<section class="sheet entrance-fade accounts-header">
+  <div>
+    <h1>Accounts</h1>
+    <p class="subtle">Manage evaluation and funded account lifecycle in one place.</p>
+  </div>
+  <details class="add-account-menu">
+    <summary class="primary-btn">Add Account</summary>
+    <div class="sheet compact-settings add-account-panel">
+      <form method="post" action="{% url 'pnl_calendar:accounts' %}" class="settings-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_account">
+        <p>
+          <label for="{{ account_form.external_id.id_for_label }}">{{ account_form.external_id.label }}</label>
+          {{ account_form.external_id }}
+        </p>
+        <p>
+          <label for="{{ account_form.broker.id_for_label }}">{{ account_form.broker.label }}</label>
+          {{ account_form.broker }}
+        </p>
+        <p>
+          <label for="{{ account_form.traildown_type.id_for_label }}">{{ account_form.traildown_type.label }}</label>
+          {{ account_form.traildown_type }}
+        </p>
+        <p>
+          <label for="{{ account_form.account_size.id_for_label }}">{{ account_form.account_size.label }}</label>
+          {{ account_form.account_size }}
+        </p>
+        <p>
+          <label for="{{ account_form.evaluation_fee.id_for_label }}">{{ account_form.evaluation_fee.label }}</label>
+          <span class="currency-input"><span class="currency-mark">$</span>{{ account_form.evaluation_fee }}</span>
+        </p>
+        <p>
+          <label for="{{ account_form.is_active.id_for_label }}">{{ account_form.is_active.label }}</label>
+          {{ account_form.is_active }}
+        </p>
+        <button type="submit" class="primary-btn">Save Account</button>
+      </form>
+    </div>
+  </details>
+</section>
+
+<section class="accounts-grid">
+  <article class="sheet accounts-column entrance-fade">
+    <h2>Evaluation Accounts</h2>
+    {% for account in active_eval_accounts %}
+    <div class="account-row">
+      <div>
+        <strong>{{ account.external_id|default:account.nickname }}</strong>
+        <small>{{ account.get_broker_display }} | {{ account.get_traildown_type_display }}</small>
+      </div>
+      <details class="row-menu">
+        <summary>⋯</summary>
+        <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="account_row_action">
+          <input type="hidden" name="account_id" value="{{ account.id }}">
+          <button type="submit" name="row_action" value="move_to_funded">Move to funded</button>
+          <button type="submit" name="row_action" value="evaluation_blown">Evaluation blown</button>
+        </form>
+      </details>
+    </div>
+    {% empty %}
+    <p class="subtle">No active evaluation accounts.</p>
+    {% endfor %}
+
+    <div class="inactive-block">
+      <div class="inactive-head">
+        <h3>Inactive Evaluation</h3>
+        <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_inactive_eval">
+          <button type="submit" class="chip-link">Clear list</button>
+        </form>
+      </div>
+      {% for account in inactive_eval_accounts %}
+      <div class="account-row inactive">
+        <div>
+          <strong>{{ account.external_id|default:account.nickname }}</strong>
+          <small>{{ account.get_inactive_reason_display|default:"Inactive" }}</small>
+        </div>
+        <details class="row-menu">
+          <summary>⋯</summary>
+          <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="account_row_action">
+            <input type="hidden" name="account_id" value="{{ account.id }}">
+            <button type="submit" name="row_action" value="reactivate">Reactivate</button>
+          </form>
+        </details>
+      </div>
+      {% empty %}
+      <p class="subtle">No inactive evaluation accounts.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="sheet accounts-column entrance-fade">
+    <h2>Funded Accounts</h2>
+    {% for account in active_funded_accounts %}
+    <div class="account-row">
+      <div>
+        <strong>{{ account.external_id|default:account.nickname }}</strong>
+        <small>{{ account.get_broker_display }} | {{ account.get_traildown_type_display }}</small>
+      </div>
+      <details class="row-menu">
+        <summary>⋯</summary>
+        <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="account_row_action">
+          <input type="hidden" name="account_id" value="{{ account.id }}">
+          <button type="submit" name="row_action" value="max_payouts_received">Max payouts received</button>
+          <button type="submit" name="row_action" value="funding_blown">Funding blown</button>
+        </form>
+      </details>
+    </div>
+    {% empty %}
+    <p class="subtle">No active funded accounts.</p>
+    {% endfor %}
+
+    <div class="inactive-block">
+      <div class="inactive-head">
+        <h3>Inactive Funded</h3>
+        <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_inactive_funded">
+          <button type="submit" class="chip-link">Clear list</button>
+        </form>
+      </div>
+      {% for account in inactive_funded_accounts %}
+      <div class="account-row inactive">
+        <div>
+          <strong>{{ account.external_id|default:account.nickname }}</strong>
+          <small>{{ account.get_inactive_reason_display|default:"Inactive" }}</small>
+        </div>
+        <details class="row-menu">
+          <summary>⋯</summary>
+          <form method="post" action="{% url 'pnl_calendar:accounts' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="account_row_action">
+            <input type="hidden" name="account_id" value="{{ account.id }}">
+            <button type="submit" name="row_action" value="reactivate">Reactivate</button>
+          </form>
+        </details>
+      </div>
+      {% empty %}
+      <p class="subtle">No inactive funded accounts.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+</div>
+{% endblock %}

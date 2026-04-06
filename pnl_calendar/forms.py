@@ -1,3 +1,6 @@
+from decimal import Decimal
+import re
+
 from django import forms
 from django.forms import modelformset_factory
 
@@ -5,6 +8,22 @@ from .models import CopyTradingGroup, Payout, PropAccount, Trade
 
 
 class TradeFilterForm(forms.Form):
+    hot_range = forms.ChoiceField(
+        required=False,
+        choices=[
+            ("today", "Today"),
+            ("yesterday", "Yesterday"),
+            ("this_week", "This week"),
+            ("previous_week", "Previous week"),
+            ("this_month", "This month"),
+            ("previous_month", "Previous month"),
+            ("this_quarter", "This quarter"),
+            ("previous_quarter", "Previous quarter"),
+            ("this_year", "This year"),
+            ("previous_year", "Previous year"),
+            ("custom", "Custom date"),
+        ],
+    )
     month = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     date_from = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     date_to = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -48,21 +67,37 @@ class TradeForm(forms.ModelForm):
 
 
 class AccountForm(forms.ModelForm):
+    ACCOUNT_SIZE_CHOICES = [
+        (Decimal("25000"), "25,000"),
+        (Decimal("50000"), "50,000"),
+        (Decimal("100000"), "100,000"),
+        (Decimal("150000"), "150,000"),
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["external_id"].required = True
+        self.fields["external_id"].label = "Account ID (Tradovate/Apex)"
+        self.fields["account_size"].widget = forms.Select(
+            choices=[(str(value), label) for value, label in self.ACCOUNT_SIZE_CHOICES]
+        )
+
+    def clean_external_id(self):
+        value = (self.cleaned_data.get("external_id") or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]+", value):
+            raise forms.ValidationError("Use only capital letters A-Z and numbers 0-9 (no spaces, dashes, or symbols).")
+        return value
+
     class Meta:
         model = PropAccount
         fields = [
-            "nickname",
             "external_id",
             "broker",
-            "stage",
+            "traildown_type",
             "account_size",
-            "activation_fee",
-            "profit_target_hit_date",
+            "evaluation_fee",
             "is_active",
         ]
-        widgets = {
-            "profit_target_hit_date": forms.DateInput(attrs={"type": "date"}),
-        }
 
 
 class PayoutForm(forms.ModelForm):
@@ -96,5 +131,18 @@ class CopyTradingAssignmentForm(forms.ModelForm):
 CopyTradingAssignmentFormSet = modelformset_factory(
     PropAccount,
     form=CopyTradingAssignmentForm,
+    extra=0,
+)
+
+
+class AccountLifecycleForm(forms.ModelForm):
+    class Meta:
+        model = PropAccount
+        fields = ["stage", "traildown_type", "activation_fee", "is_active"]
+
+
+AccountLifecycleFormSet = modelformset_factory(
+    PropAccount,
+    form=AccountLifecycleForm,
     extra=0,
 )

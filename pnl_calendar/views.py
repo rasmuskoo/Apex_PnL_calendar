@@ -10,14 +10,22 @@ from django.urls import reverse
 
 from .forms import (
     AccountForm,
+    AccountLifecycleFormSet,
     CopyTradingAssignmentFormSet,
     CopyTradingGroupForm,
     PayoutForm,
     TradeFilterForm,
     TradeForm,
 )
-from .models import CopyTradingGroup, Payout, PropAccount, PropFirm, Trade
-from .rules import evaluate_apex_accounts
+from .models import CopyTradingGroup, InactiveReason, Payout, PropAccount, PropFirm, Stage, Trade
+from .rules import (
+    APEX_DRAWDOWN_LIMIT,
+    APEX_MAX_PAYOUTS,
+    APEX_PAYOUT_CAPS_50K,
+    APEX_PAYOUT_MIN_DAYS,
+    APEX_PAYOUT_MIN_PROFIT,
+    evaluate_apex_accounts,
+)
 from .services import build_month_grid, day_and_trade_streaks
 
 APEX_FIRM_CODE = "apex"
@@ -33,6 +41,84 @@ def _parse_month(month_raw: str | None) -> date:
     except ValueError:
         today = date.today()
         return today.replace(day=1)
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = (value.month - 1) + months
+    year = value.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _add_years(value: date, years: int) -> date:
+    year = value.year + years
+    day = value.day
+    if value.month == 2 and value.day == 29 and not calendar.isleap(year):
+        day = 28
+    return date(year, value.month, day)
+
+
+def _resolve_hot_range_bounds(hot_range: str | None):
+    if not hot_range or hot_range == "custom":
+        return None, None
+
+    today = date.today()
+    if hot_range == "today":
+        return today, today
+    if hot_range == "yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+    if hot_range == "this_week":
+        return today - timedelta(days=6), today
+    if hot_range == "previous_week":
+        end = today - timedelta(days=7)
+        return end - timedelta(days=6), end
+    if hot_range == "this_month":
+        return _add_months(today, -1) + timedelta(days=1), today
+    if hot_range == "previous_month":
+        this_start = _add_months(today, -1) + timedelta(days=1)
+        end = this_start - timedelta(days=1)
+        return _add_months(end, -1) + timedelta(days=1), end
+    if hot_range == "this_quarter":
+        return _add_months(today, -3) + timedelta(days=1), today
+    if hot_range == "previous_quarter":
+        this_start = _add_months(today, -3) + timedelta(days=1)
+        end = this_start - timedelta(days=1)
+        return _add_months(end, -3) + timedelta(days=1), end
+    if hot_range == "this_year":
+        return _add_years(today, -1) + timedelta(days=1), today
+    if hot_range == "previous_year":
+        this_start = _add_years(today, -1) + timedelta(days=1)
+        end = this_start - timedelta(days=1)
+        return _add_years(end, -1) + timedelta(days=1), end
+    return None, None
+
+
+def _resolve_date_filters(params):
+    hot_range = params.get("hot_range")
+    date_from_raw = params.get("date_from")
+    date_to_raw = params.get("date_to")
+    if not hot_range and not date_from_raw and not date_to_raw:
+        hot_range = "this_month"
+
+    hot_from, hot_to = _resolve_hot_range_bounds(hot_range)
+    if hot_from and hot_to:
+        return hot_from, hot_to
+
+    date_from = None
+    date_to = None
+    try:
+        if date_from_raw:
+            date_from = date.fromisoformat(date_from_raw)
+    except ValueError:
+        date_from = None
+    try:
+        if date_to_raw:
+            date_to = date.fromisoformat(date_to_raw)
+    except ValueError:
+        date_to = None
+    return date_from, date_to
 
 
 def _scope_from_request(request):
@@ -52,9 +138,7 @@ def _base_filtered_queryset(request):
     if scope["stage"]:
         qs = qs.filter(account__stage=scope["stage"])
 
-    date_from = request.GET.get("date_from")
-    date_to = request.GET.get("date_to")
-
+    date_from, date_to = _resolve_date_filters(request.GET)
     if date_from:
         qs = qs.filter(trade_date__gte=date_from)
     if date_to:
@@ -64,7 +148,11 @@ def _base_filtered_queryset(request):
 
 
 def _rule_scope_accounts(request):
-    qs = PropAccount.objects.select_related("firm").filter(firm__code=APEX_FIRM_CODE)
+    qs = PropAccount.objects.select_related("firm").filter(
+        firm__code=APEX_FIRM_CODE,
+        is_active=True,
+        is_hidden_from_accounts=False,
+    )
     scope = _scope_from_request(request)
     if scope["account_id"]:
         qs = qs.filter(id=scope["account_id"])
@@ -73,7 +161,7 @@ def _rule_scope_accounts(request):
     return qs
 
 
-def _build_summary_data(trades):
+def _build_summary_data(trades, accounts_qs=None):
     net_expr = F("gross_pnl") - F("broker_fees")
     totals = trades.aggregate(
         net_pnl=Coalesce(Sum(net_expr), Decimal("0.00")),
@@ -110,6 +198,13 @@ def _build_summary_data(trades):
         if total_account_size
         else Decimal("0.00")
     )
+    if accounts_qs is not None:
+        fee_totals = accounts_qs.aggregate(
+            evaluation_fee_total=Coalesce(Sum("evaluation_fee"), Decimal("0.00")),
+            activation_fee_total=Coalesce(Sum("activation_fee"), Decimal("0.00")),
+        )
+    else:
+        fee_totals = {"evaluation_fee_total": Decimal("0.00"), "activation_fee_total": Decimal("0.00")}
 
     return {
         "net_pnl": totals["net_pnl"],
@@ -120,20 +215,118 @@ def _build_summary_data(trades):
         "avg_loss_day": (sum(loss_days) / len(loss_days)) if loss_days else 0,
         "accounts_used": accounts_used,
         "account_return_pct": account_return_pct,
+        "evaluation_fee_total": fee_totals["evaluation_fee_total"],
+        "activation_fee_total": fee_totals["activation_fee_total"],
         "streaks": streaks,
     }
+
+
+def _build_day_nets(trades):
+    day_nets = {}
+    if hasattr(trades, "order_by"):
+        iterable = trades.order_by("trade_date", "id")
+    else:
+        iterable = sorted(trades, key=lambda trade: (trade.trade_date, getattr(trade, "id", 0)))
+    for trade in iterable:
+        day_nets.setdefault(trade.trade_date, Decimal("0.00"))
+        day_nets[trade.trade_date] += trade.net_pnl
+    return day_nets
+
+
+def _build_dashboard_warnings(accounts, trades, payouts):
+    warnings = []
+    trades_by_account = {}
+    payouts_by_account = {}
+
+    for trade in trades.order_by("trade_date", "id"):
+        trades_by_account.setdefault(trade.account_id, []).append(trade)
+    for payout in payouts.order_by("payout_date", "id"):
+        payouts_by_account.setdefault(payout.account_id, []).append(payout)
+
+    for account in accounts:
+        account_trades = trades_by_account.get(account.id, [])
+        day_nets = _build_day_nets(account_trades)
+
+        running_equity = account.account_size
+        peak_equity = account.account_size
+        worst_drawdown = Decimal("0.00")
+        for day in sorted(day_nets.keys()):
+            running_equity += day_nets[day]
+            if running_equity > peak_equity:
+                peak_equity = running_equity
+            drawdown = peak_equity - running_equity
+            if drawdown > worst_drawdown:
+                worst_drawdown = drawdown
+
+        drawdown_buffer = APEX_DRAWDOWN_LIMIT - worst_drawdown
+        if drawdown_buffer < Decimal("1000.00"):
+            warnings.append(
+                {
+                    "type": "drawdown",
+                    "account": account,
+                    "detail": f"Drawdown buffer ${drawdown_buffer:.2f} (worst ${worst_drawdown:.2f} / limit ${APEX_DRAWDOWN_LIMIT:.2f})",
+                }
+            )
+
+        if account.stage != Stage.FUNDED:
+            continue
+
+        account_payouts = payouts_by_account.get(account.id, [])
+        payout_count = len(account_payouts)
+        if payout_count >= APEX_MAX_PAYOUTS:
+            warnings.append(
+                {
+                    "type": "max_payout",
+                    "account": account,
+                    "detail": f"Max payout status reached ({payout_count}/{APEX_MAX_PAYOUTS}).",
+                }
+            )
+            continue
+
+        last_payout_date = account_payouts[-1].payout_date if account_payouts else None
+        payout_window_day_nets = {
+            day: amount for day, amount in day_nets.items() if last_payout_date is None or day > last_payout_date
+        }
+        payout_window_days = len(payout_window_day_nets)
+        payout_window_net = sum(payout_window_day_nets.values(), Decimal("0.00"))
+        eligible = payout_window_days >= APEX_PAYOUT_MIN_DAYS and payout_window_net >= APEX_PAYOUT_MIN_PROFIT
+        if eligible:
+            next_cap = APEX_PAYOUT_CAPS_50K[payout_count] if payout_count < len(APEX_PAYOUT_CAPS_50K) else Decimal("0.00")
+            accessible = min(next_cap, payout_window_net) if next_cap > 0 else payout_window_net
+            warnings.append(
+                {
+                    "type": "payout_eligible",
+                    "account": account,
+                    "detail": f"Eligible payout ${accessible:.2f} (cap ${next_cap:.2f}, window net ${payout_window_net:.2f}).",
+                }
+            )
+
+    return warnings
 
 
 def dashboard(request):
     month_start = _parse_month(request.GET.get("month"))
     month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
 
-    accounts_qs = PropAccount.objects.select_related("firm").filter(firm__code=APEX_FIRM_CODE).order_by("nickname")
+    accounts_qs = PropAccount.objects.select_related("firm").filter(
+        firm__code=APEX_FIRM_CODE,
+        is_active=True,
+        is_hidden_from_accounts=False,
+    ).order_by("nickname")
 
     trades = _base_filtered_queryset(request)
 
+    form_data = request.GET.copy()
+    if not form_data.get("hot_range") and not form_data.get("date_from") and not form_data.get("date_to"):
+        form_data["hot_range"] = "this_month"
+    hot_from, hot_to = _resolve_date_filters(form_data)
+    if hot_from:
+        form_data["date_from"] = hot_from.isoformat()
+    if hot_to:
+        form_data["date_to"] = hot_to.isoformat()
+
     form = TradeFilterForm(
-        request.GET or None,
+        form_data or None,
         account_qs=accounts_qs,
         initial={"month": month_start},
     )
@@ -157,17 +350,17 @@ def dashboard(request):
     day_map = {row["trade_date"]: row for row in daily}
 
     month_grid = build_month_grid(month_start.year, month_start.month)
-    summary = _build_summary_data(trades)
-    scoped_accounts = list(_rule_scope_accounts(request))
+    scoped_accounts_qs = _rule_scope_accounts(request)
+    scoped_accounts = list(scoped_accounts_qs)
+    summary = _build_summary_data(trades, accounts_qs=scoped_accounts_qs)
     scoped_trades = Trade.objects.filter(account__in=scoped_accounts).select_related("account", "account__firm")
     scoped_payouts = Payout.objects.filter(account__in=scoped_accounts).select_related("account", "account__firm")
     apex_accounts = [account for account in scoped_accounts if account.firm.code == "apex"]
-    apex_reports = evaluate_apex_accounts(
-        accounts=apex_accounts,
-        trades=scoped_trades.filter(account__in=apex_accounts),
-        payouts=scoped_payouts.filter(account__in=apex_accounts),
-        today=date.today(),
-    ) if apex_accounts else []
+    warning_items = _build_dashboard_warnings(
+        apex_accounts,
+        scoped_trades.filter(account__in=apex_accounts),
+        scoped_payouts.filter(account__in=apex_accounts),
+    )
 
     params = request.GET.copy()
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
@@ -185,7 +378,7 @@ def dashboard(request):
         "month_grid": month_grid,
         "day_map": day_map,
         "summary": summary,
-        "apex_reports": apex_reports,
+        "warning_items": warning_items,
         "prev_query": prev_params.urlencode(),
         "next_query": next_params.urlencode(),
     }
@@ -199,7 +392,11 @@ def add_trade(request):
     if request.method != "POST":
         return redirect("pnl_calendar:dashboard")
 
-    apex_accounts = PropAccount.objects.filter(firm__code=APEX_FIRM_CODE, is_active=True).order_by("nickname")
+    apex_accounts = PropAccount.objects.filter(
+        firm__code=APEX_FIRM_CODE,
+        is_active=True,
+        is_hidden_from_accounts=False,
+    ).order_by("nickname")
     form = TradeForm(request.POST, account_qs=apex_accounts)
     if form.is_valid():
         trade = form.save()
@@ -240,65 +437,69 @@ def settings_view(request):
     )
     account_queryset = PropAccount.objects.select_related("firm", "copy_group").filter(firm__code=APEX_FIRM_CODE).order_by("nickname")
     if request.method == "POST":
-        updated_anything = False
-        had_errors = False
-        account_form = AccountForm(request.POST, prefix="account")
-        if account_form.is_valid() and account_form.cleaned_data.get("nickname"):
-            account = account_form.save(commit=False)
-            account.firm = apex_firm
-            account.save()
-            updated_anything = True
-
-        payout_form = PayoutForm(request.POST, account_qs=account_queryset, prefix="payout")
-        if payout_form.is_valid() and payout_form.cleaned_data.get("account") and payout_form.cleaned_data.get("amount"):
-            payout_form.save()
-            updated_anything = True
-
-        group_form = CopyTradingGroupForm(request.POST, prefix="copy_group")
-        if group_form.is_valid() and group_form.cleaned_data.get("name"):
-            group_form.save()
-            updated_anything = True
-
-        assignment_formset = CopyTradingAssignmentFormSet(request.POST, queryset=account_queryset, prefix="copy_assign")
-        if assignment_formset.is_valid():
-            lead_per_group = {}
-            assignment_errors = []
-            for form_row in assignment_formset.forms:
-                group = form_row.cleaned_data.get("copy_group")
-                is_lead = form_row.cleaned_data.get("is_copy_lead")
-                account = form_row.instance
-                if is_lead and not group:
-                    assignment_errors.append(f"{account.nickname}: lead account requires a trading group.")
-                if group and is_lead:
-                    lead_per_group.setdefault(group.id, 0)
-                    lead_per_group[group.id] += 1
-
-            duplicate_leads = [group_id for group_id, count in lead_per_group.items() if count > 1]
-            if duplicate_leads:
-                assignment_errors.append("Only one lead account is allowed per copy trading group.")
-
-            if assignment_errors:
-                had_errors = True
-                for err in assignment_errors:
-                    messages.error(request, err)
+        action = request.POST.get("action")
+        if action == "save_payout":
+            payout_form = PayoutForm(request.POST, account_qs=account_queryset, prefix="payout")
+            if payout_form.is_valid():
+                payout_form.save()
+                messages.success(request, "Payout recorded.")
             else:
-                assignment_formset.save()
-                updated_anything = True
+                messages.error(request, f"Could not record payout: {payout_form.errors.as_text()}")
+        elif action == "save_group":
+            group_form = CopyTradingGroupForm(request.POST, prefix="copy_group")
+            if group_form.is_valid() and group_form.cleaned_data.get("name"):
+                group_form.save()
+                messages.success(request, "Copy trading group created.")
+            else:
+                messages.error(request, f"Could not create group: {group_form.errors.as_text()}")
+        elif action == "save_assignments":
+            assignment_formset = CopyTradingAssignmentFormSet(request.POST, queryset=account_queryset, prefix="copy_assign")
+            if assignment_formset.is_valid():
+                lead_per_group = {}
+                assignment_errors = []
+                for form_row in assignment_formset.forms:
+                    group = form_row.cleaned_data.get("copy_group")
+                    is_lead = form_row.cleaned_data.get("is_copy_lead")
+                    account = form_row.instance
+                    if is_lead and not group:
+                        assignment_errors.append(f"{account.nickname}: lead account requires a trading group.")
+                    if group and is_lead:
+                        lead_per_group.setdefault(group.id, 0)
+                        lead_per_group[group.id] += 1
 
-        if not had_errors:
-            messages.success(request, "Settings updated." if updated_anything else "No settings changes detected.")
+                duplicate_leads = [group_id for group_id, count in lead_per_group.items() if count > 1]
+                if duplicate_leads:
+                    assignment_errors.append("Only one lead account is allowed per copy trading group.")
+
+                if assignment_errors:
+                    for err in assignment_errors:
+                        messages.error(request, err)
+                else:
+                    assignment_formset.save()
+                    messages.success(request, "Copy trading setup saved.")
+            else:
+                messages.error(request, f"Could not save copy trading setup: {assignment_formset.errors}")
+        elif action == "save_account_lifecycle":
+            lifecycle_formset = AccountLifecycleFormSet(request.POST, queryset=account_queryset, prefix="account_lifecycle")
+            if lifecycle_formset.is_valid():
+                lifecycle_formset.save()
+                messages.success(request, "Account stages and activation fees updated.")
+            else:
+                messages.error(request, f"Could not update account lifecycle: {lifecycle_formset.errors}")
+        else:
+            messages.error(request, "Unknown settings action.")
         return redirect(request.META.get("HTTP_REFERER", reverse("pnl_calendar:dashboard")))
 
-    account_form = AccountForm(prefix="account")
     payout_form = PayoutForm(account_qs=account_queryset, prefix="payout")
     group_form = CopyTradingGroupForm(prefix="copy_group")
     assignment_formset = CopyTradingAssignmentFormSet(queryset=account_queryset, prefix="copy_assign")
+    lifecycle_formset = AccountLifecycleFormSet(queryset=account_queryset, prefix="account_lifecycle")
 
     context = {
-        "account_form": account_form,
         "payout_form": payout_form,
         "group_form": group_form,
         "assignment_formset": assignment_formset,
+        "lifecycle_formset": lifecycle_formset,
         "copy_groups": CopyTradingGroup.objects.order_by("name"),
         "accounts": account_queryset,
         "payouts": Payout.objects.select_related("account", "account__firm").order_by("-payout_date", "-id"),
@@ -307,3 +508,117 @@ def settings_view(request):
     if request.headers.get("HX-Request"):
         return render(request, "pnl_calendar/_settings_modal_content.html", context)
     return render(request, "pnl_calendar/settings.html", context)
+
+
+def accounts_view(request):
+    apex_firm, _ = PropFirm.objects.get_or_create(
+        code=APEX_FIRM_CODE,
+        defaults={"name": "Apex Trader Funding", "funded_account_limit": 20, "display_order": 1, "is_active": True},
+    )
+    accounts_qs = PropAccount.objects.select_related("firm", "copy_group").filter(firm__code=APEX_FIRM_CODE).order_by("nickname")
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "save_account":
+            account_form = AccountForm(request.POST, prefix="account")
+            account_form.instance.firm = apex_firm
+            if account_form.is_valid():
+                account = account_form.save(commit=False)
+                account.firm = apex_firm
+                account.nickname = account.external_id
+                account.stage = Stage.EVALUATION
+                account.is_active = True
+                account.inactive_reason = InactiveReason.NONE
+                account.is_hidden_from_accounts = False
+                duplicate_exists = PropAccount.objects.filter(firm=apex_firm, nickname=account.nickname).exists()
+                if duplicate_exists:
+                    messages.error(request, "An account with this Account ID already exists.")
+                else:
+                    account.save()
+                    messages.success(request, "Account added.")
+            else:
+                messages.error(request, f"Could not add account: {account_form.errors.as_text()}")
+        elif action == "account_row_action":
+            account_id = request.POST.get("account_id")
+            row_action = request.POST.get("row_action")
+            account = accounts_qs.filter(id=account_id).first()
+            if not account:
+                messages.error(request, "Account not found.")
+            else:
+                if row_action == "move_to_funded":
+                    account.stage = Stage.FUNDED
+                    account.is_active = True
+                    account.inactive_reason = InactiveReason.NONE
+                    account.is_hidden_from_accounts = False
+                    account.save(update_fields=["stage", "is_active", "inactive_reason", "is_hidden_from_accounts"])
+                    messages.success(request, f"{account.external_id or account.nickname} moved to Funded.")
+                elif row_action == "evaluation_blown":
+                    account.is_active = False
+                    account.inactive_reason = InactiveReason.EVALUATION_BLOWN
+                    account.is_hidden_from_accounts = False
+                    account.save(update_fields=["is_active", "inactive_reason", "is_hidden_from_accounts"])
+                    messages.success(request, f"{account.external_id or account.nickname} marked as Evaluation blown.")
+                elif row_action == "max_payouts_received":
+                    account.is_active = False
+                    account.inactive_reason = InactiveReason.MAX_PAYOUTS_RECEIVED
+                    account.is_hidden_from_accounts = False
+                    account.save(update_fields=["is_active", "inactive_reason", "is_hidden_from_accounts"])
+                    messages.success(request, f"{account.external_id or account.nickname} marked as Max payouts received.")
+                elif row_action == "funding_blown":
+                    account.is_active = False
+                    account.inactive_reason = InactiveReason.FUNDING_BLOWN
+                    account.is_hidden_from_accounts = False
+                    account.save(update_fields=["is_active", "inactive_reason", "is_hidden_from_accounts"])
+                    messages.success(request, f"{account.external_id or account.nickname} marked as Funding blown.")
+                elif row_action == "reactivate":
+                    account.is_active = True
+                    account.inactive_reason = InactiveReason.NONE
+                    account.is_hidden_from_accounts = False
+                    account.save(update_fields=["is_active", "inactive_reason", "is_hidden_from_accounts"])
+                    messages.success(request, f"{account.external_id or account.nickname} reactivated.")
+                else:
+                    messages.error(request, "Unknown account action.")
+        elif action == "clear_inactive_eval":
+            updated = accounts_qs.filter(stage=Stage.EVALUATION, is_active=False, is_hidden_from_accounts=False).update(
+                is_hidden_from_accounts=True
+            )
+            messages.success(request, f"Cleared {updated} inactive evaluation account(s) from the list.")
+        elif action == "clear_inactive_funded":
+            updated = accounts_qs.filter(stage=Stage.FUNDED, is_active=False, is_hidden_from_accounts=False).update(
+                is_hidden_from_accounts=True
+            )
+            messages.success(request, f"Cleared {updated} inactive funded account(s) from the list.")
+        return redirect("pnl_calendar:accounts")
+
+    account_form = AccountForm(prefix="account")
+    active_eval_accounts = accounts_qs.filter(stage=Stage.EVALUATION, is_active=True, is_hidden_from_accounts=False)
+    active_funded_accounts = accounts_qs.filter(stage=Stage.FUNDED, is_active=True, is_hidden_from_accounts=False)
+    inactive_eval_accounts = accounts_qs.filter(stage=Stage.EVALUATION, is_active=False, is_hidden_from_accounts=False)
+    inactive_funded_accounts = accounts_qs.filter(stage=Stage.FUNDED, is_active=False, is_hidden_from_accounts=False)
+
+    return render(
+        request,
+        "pnl_calendar/accounts.html",
+        {
+            "account_form": account_form,
+            "active_eval_accounts": active_eval_accounts,
+            "active_funded_accounts": active_funded_accounts,
+            "inactive_eval_accounts": inactive_eval_accounts,
+            "inactive_funded_accounts": inactive_funded_accounts,
+        },
+    )
+
+
+def rule_monitor_view(request):
+    scoped_accounts_qs = _rule_scope_accounts(request)
+    scoped_accounts = list(scoped_accounts_qs)
+    scoped_trades = Trade.objects.filter(account__in=scoped_accounts).select_related("account", "account__firm")
+    scoped_payouts = Payout.objects.filter(account__in=scoped_accounts).select_related("account", "account__firm")
+    apex_accounts = [account for account in scoped_accounts if account.firm.code == "apex"]
+    apex_reports = evaluate_apex_accounts(
+        accounts=apex_accounts,
+        trades=scoped_trades.filter(account__in=apex_accounts),
+        payouts=scoped_payouts.filter(account__in=apex_accounts),
+        today=date.today(),
+    ) if apex_accounts else []
+    return render(request, "pnl_calendar/rule_monitor.html", {"apex_reports": apex_reports})

@@ -6,13 +6,13 @@
     <h1>Performance Calendar</h1>
     <p class="subtle">Track monthly outcomes, analyze streaks, and review account rule health in one focused surface.</p>
   </div>
-  <form id="filters" class="filter-grid" hx-get="{{ request.path }}" hx-target="#calendar-block" hx-swap="outerHTML" hx-trigger="change from:input, submit">
+  <form id="filters" class="filter-grid" hx-get="{{ request.path }}" hx-target="#calendar-block" hx-swap="outerHTML" hx-trigger="change from:input">
+    <label>Hot date range{{ filter_form.hot_range }}</label>
     <label>{{ filter_form.month.label }}{{ filter_form.month }}</label>
     <label>{{ filter_form.date_from.label }}{{ filter_form.date_from }}</label>
     <label>{{ filter_form.date_to.label }}{{ filter_form.date_to }}</label>
     <label>{{ filter_form.account.label }}{{ filter_form.account }}</label>
     <label>Evaluation/Funded{{ filter_form.evaluation_funded }}</label>
-    <button type="submit" class="primary-btn">Apply Filters</button>
   </form>
 </section>
 

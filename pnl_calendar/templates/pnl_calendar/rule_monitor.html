@@ -1,0 +1,34 @@
+{% extends "pnl_calendar/base.html" %}
+{% block content %}
+<div class="rule-monitor-page">
+<section class="sheet entrance-fade">
+  <h1>Rule Monitor</h1>
+  <p class="subtle">Full Apex account rule breakdown for active visible accounts.</p>
+</section>
+
+{% if apex_reports %}
+<section class="sheet rules-section entrance-fade">
+  {% for report in apex_reports %}
+  <article class="rules-card">
+    <header>
+      <strong>{{ report.account.external_id|default:report.account.nickname }}</strong>
+      <small>{{ report.account.get_stage_display }} | {{ report.account.account_size|floatformat:0 }}</small>
+      <small>Breaches: {{ report.breach_count }} | Warnings: {{ report.warn_count }}</small>
+    </header>
+    <ul class="rule-list">
+      {% for check in report.checks %}
+      <li class="rule-{{ check.level }}">
+        <strong>{{ check.name }}:</strong> {{ check.detail }}
+      </li>
+      {% endfor %}
+    </ul>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="sheet entrance-fade">
+  <p class="subtle">No accounts to evaluate right now.</p>
+</section>
+{% endif %}
+</div>
+{% endblock %}

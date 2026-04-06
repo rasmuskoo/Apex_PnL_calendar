@@ -22,6 +22,18 @@ class ContractType(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class TraildownType(models.TextChoices):
+    INTRADAY = "intraday", "Intraday"
+    END_OF_DAY = "end_of_day", "End of day"
+
+
+class InactiveReason(models.TextChoices):
+    NONE = "", "None"
+    EVALUATION_BLOWN = "evaluation_blown", "Evaluation blown"
+    MAX_PAYOUTS_RECEIVED = "max_payouts_received", "Max payouts received"
+    FUNDING_BLOWN = "funding_blown", "Funding blown"
+
+
 class PropFirm(models.Model):
     name = models.CharField(max_length=120, unique=True)
     code = models.SlugField(max_length=40, unique=True)
@@ -52,8 +64,10 @@ class PropAccount(models.Model):
     nickname = models.CharField(max_length=120)
     external_id = models.CharField(max_length=120, blank=True)
     broker = models.CharField(max_length=20, choices=Broker.choices, default=Broker.OTHER)
+    traildown_type = models.CharField(max_length=20, choices=TraildownType.choices, default=TraildownType.INTRADAY)
     stage = models.CharField(max_length=20, choices=Stage.choices, default=Stage.EVALUATION)
     account_size = models.DecimalField(max_digits=12, decimal_places=2)
+    evaluation_fee = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0.00"))
     activation_fee = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0.00"))
     profit_target_hit_date = models.DateField(null=True, blank=True)
     copy_group = models.ForeignKey(
@@ -65,6 +79,8 @@ class PropAccount(models.Model):
     )
     is_copy_lead = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    inactive_reason = models.CharField(max_length=40, choices=InactiveReason.choices, blank=True, default=InactiveReason.NONE)
+    is_hidden_from_accounts = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("firm", "nickname")
@@ -82,7 +98,7 @@ class PropAccount(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        if self.firm and self.firm.code != "apex":
+        if self.firm_id and self.firm.code != "apex":
             raise ValidationError({"firm": "This app is configured for Apex Trader Funding only."})
 
         if self.is_copy_lead and self.copy_group is None:
@@ -95,7 +111,7 @@ class PropAccount(models.Model):
             if qs.exists():
                 raise ValidationError({"is_copy_lead": "Only one lead account is allowed per copy trading group."})
 
-        if self.stage == Stage.FUNDED and self.is_active and self.firm.funded_account_limit:
+        if self.stage == Stage.FUNDED and self.is_active and self.firm_id and self.firm.funded_account_limit:
             qs = PropAccount.objects.filter(
                 firm=self.firm,
                 stage=Stage.FUNDED,

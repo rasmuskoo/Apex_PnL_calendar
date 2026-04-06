@@ -1,9 +1,29 @@
 {% load pnl_extras %}
 <div id="calendar-block" class="calendar-shell entrance-fade">
   <section class="sheet month-nav compact-month-nav">
-    <a class="chip-link" data-calendar-nav data-dir="prev" href="?{{ prev_query }}" hx-get="?{{ prev_query }}" hx-target="#calendar-block" hx-swap="outerHTML">Previous</a>
+    <a
+      class="chip-link month-arrow"
+      data-calendar-nav
+      data-dir="prev"
+      href="?{{ prev_query }}"
+      hx-get="?{{ prev_query }}"
+      hx-target="#calendar-block"
+      hx-swap="outerHTML"
+      aria-label="Previous month"
+      title="Previous month"
+    >&#8592;</a>
     <h2>{{ month_start|date:"F Y" }}</h2>
-    <a class="chip-link" data-calendar-nav data-dir="next" href="?{{ next_query }}" hx-get="?{{ next_query }}" hx-target="#calendar-block" hx-swap="outerHTML">Next</a>
+    <a
+      class="chip-link month-arrow"
+      data-calendar-nav
+      data-dir="next"
+      href="?{{ next_query }}"
+      hx-get="?{{ next_query }}"
+      hx-target="#calendar-block"
+      hx-swap="outerHTML"
+      aria-label="Next month"
+      title="Next month"
+    >&#8594;</a>
   </section>
 
   <section class="sheet calendar-grid-wrapper">
@@ -31,6 +51,8 @@
 
   <section class="summary-grid">
     <article class="metric-cell"><h4>Net PnL</h4><p>${{ summary.net_pnl|floatformat:2 }}</p></article>
+    <article class="metric-cell"><h4>Evaluation Fees</h4><p>${{ summary.evaluation_fee_total|floatformat:2 }}</p></article>
+    <article class="metric-cell"><h4>Activation Fees</h4><p>${{ summary.activation_fee_total|floatformat:2 }}</p></article>
     <article class="metric-cell"><h4>Net % vs Accounts</h4><p>{{ summary.account_return_pct|floatformat:2 }}% ({{ summary.accounts_used }} accounts)</p></article>
     <article class="metric-cell"><h4>Trade Win %</h4><p>{{ summary.trade_win_pct|floatformat:2 }}%</p></article>
     <article class="metric-cell"><h4>Current Day Streak</h4><p>Win {{ summary.streaks.day.current_win }} / Loss {{ summary.streaks.day.current_loss }}</p></article>
@@ -41,25 +63,21 @@
     <article class="metric-cell"><h4>Avg Win/Loss Day</h4><p>${{ summary.avg_win_day|floatformat:2 }} / ${{ summary.avg_loss_day|floatformat:2 }}</p></article>
   </section>
 
-  {% if apex_reports %}
   <section class="sheet rules-section">
-    <h3>Apex Rule Monitor</h3>
-    {% for report in apex_reports %}
+    <h3>Warnings</h3>
+    {% if warning_items %}
+    {% for warning in warning_items %}
     <article class="rules-card">
       <header>
-        <strong>{{ report.account.nickname }}</strong>
-        <small>{{ report.account.get_stage_display }} | {{ report.account.account_size|floatformat:0 }}</small>
-        <small>Breaches: {{ report.breach_count }} | Warnings: {{ report.warn_count }}</small>
+        <strong>{{ warning.account.external_id|default:warning.account.nickname }}</strong>
+        <small>{{ warning.account.get_stage_display }} | {{ warning.account.account_size|floatformat:0 }}</small>
       </header>
-      <ul class="rule-list">
-        {% for check in report.checks %}
-        <li class="rule-{{ check.level }}">
-          <strong>{{ check.name }}:</strong> {{ check.detail }}
-        </li>
-        {% endfor %}
-      </ul>
+      <p>{{ warning.detail }}</p>
     </article>
     {% endfor %}
+    {% else %}
+    <p class="subtle">No critical warnings right now.</p>
+    {% endif %}
+    <p><small>Full checks are available in Rule monitor.</small></p>
   </section>
-  {% endif %}
 </div>

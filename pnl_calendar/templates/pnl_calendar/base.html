@@ -14,7 +14,7 @@
   </script>
   <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2/css/pico.min.css">
   <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/sf-pro-display">
-  <link rel="stylesheet" href="/static/pnl_calendar/css/styles.css?v=20260403b">
+  <link rel="stylesheet" href="/static/pnl_calendar/css/styles.css?v=20260406c">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script defer src="/static/pnl_calendar/js/app.js"></script>
 </head>
@@ -23,9 +23,12 @@
   <header class="app-chrome">
     <nav class="topbar">
       <a class="brand-lockup" href="/" aria-label="Go to dashboard">
-        <span class="brand-mark">◉</span>
-        <span class="brand-text">Apex Trader Funding PnL</span>
+        <span class="brand-label">Tradepex</span>
       </a>
+      <div class="topbar-nav">
+        <a class="chip-link" href="{% url 'pnl_calendar:accounts' %}">Accounts</a>
+        <a class="chip-link" href="{% url 'pnl_calendar:rule_monitor' %}">Rule monitor</a>
+      </div>
       <div class="topbar-actions">
         <button
           type="button"
